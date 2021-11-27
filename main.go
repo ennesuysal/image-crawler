@@ -7,11 +7,17 @@ import (
 	"regexp"
 )
 
-func finalUrl(url string, addr string) (string, error) {
+type imageCrawler struct {
+	url     string
+	ImgUrls []string
+}
+
+func (img *imageCrawler) finalUrl(addr string) (string, error) {
 	ret, err := regexp.Match(`^/.*`, []byte(addr))
 	if err != nil || !ret {
 		return "", err
 	}
+	url := img.url
 	if url[len(url)-1] == '/' && addr[0] == '/' {
 		url = url[:len(url)-1]
 	}
@@ -21,36 +27,43 @@ func finalUrl(url string, addr string) (string, error) {
 	return url + addr, nil
 }
 
-func scanForImages(url string) ([]string, error) {
+func (img *imageCrawler) scanForImages() error {
+	url := img.url
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	re := regexp.MustCompile(`<img[^>]*src=["']([^>]*?)["'][^>]*>`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
-	result := make([]string, 0)
 	for _, match := range matches {
-		final, err := finalUrl(url, match[1])
+		final, err := img.finalUrl(match[1])
 		if final == "" {
 			final = match[1]
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
-		result = append(result, final)
+		img.ImgUrls = append(img.ImgUrls, final)
 	}
-	return result, nil
+	return nil
+}
+
+func initCrawler(url string) *imageCrawler {
+	return &imageCrawler{
+		url:     url,
+		ImgUrls: make([]string, 0),
+	}
 }
 
 func main() {
-	url := "https://www.yartu.io/"
-	a, err := scanForImages(url)
+	crawler := initCrawler("https://www.yartu.io/")
+	err := crawler.scanForImages()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%q", a)
+	fmt.Printf("%q", crawler.ImgUrls)
 }
