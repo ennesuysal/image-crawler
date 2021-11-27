@@ -9,7 +9,7 @@ import (
 
 func finalUrl(url string, addr string) (string, error) {
 	ret, err := regexp.Match(`^/.*`, []byte(addr))
-	if err != nil && ret {
+	if err != nil || !ret {
 		return "", err
 	}
 	if url[len(url)-1] == '/' && addr[0] == '/' {
@@ -18,7 +18,7 @@ func finalUrl(url string, addr string) (string, error) {
 	if url[len(url)-1] != '/' && addr[0] != '/' {
 		url = url + "/"
 	}
-	return url+addr, nil
+	return url + addr, nil
 }
 
 func scanForImages(url string) ([]string, error) {
@@ -30,11 +30,14 @@ func scanForImages(url string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	re := regexp.MustCompile(`<img[^>]*src=["'](.*?)["'][^>]*>`)
+	re := regexp.MustCompile(`<img[^>]*src=["']([^>]*?)["'][^>]*>`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	result := make([]string, 0)
 	for _, match := range matches {
 		final, err := finalUrl(url, match[1])
+		if final == "" {
+			final = match[1]
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -43,8 +46,8 @@ func scanForImages(url string) ([]string, error) {
 	return result, nil
 }
 
-func main(){
-	url := "https://blog.logrocket.com/"
+func main() {
+	url := "https://www.yartu.io/"
 	a, err := scanForImages(url)
 	if err != nil {
 		panic(err)
