@@ -9,7 +9,8 @@ import (
 
 type imageCrawler struct {
 	url     string
-	ImgUrls []string
+	ImgUrls map[string][]string
+	imgBL   []string
 	body    string
 }
 
@@ -46,9 +47,23 @@ func finalUrl(addr string, url string) (string, error) {
 	return final, nil
 }
 
-func (img *imageCrawler) scanForImages() error {
+func isSameDomain(siteUrl string, domain string) bool {
+	ret, err := regexp.Match(`^(https*://)*[^/\:]*`+siteUrl, []byte(domain))
+	if err != nil || !ret {
+		return false
+	}
+	return true
+}
+
+func (img *imageCrawler) scanForImages(url string) error {
 	pattern := `<img[^>]*src=["']([^>]*?)["'][^>]*>`
-	results := regEx(pattern, img.body)
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	results := regEx(pattern, string(body[:]))
+	imgs := make([]string, 0)
 	for _, result := range results {
 		final, err := finalUrl(result, img.url)
 		if final == "" {
@@ -57,12 +72,15 @@ func (img *imageCrawler) scanForImages() error {
 		if err != nil {
 			return err
 		}
-		img.ImgUrls = append(img.ImgUrls, final)
+
+		imgs = append(imgs, final)
 	}
+
+	img.ImgUrls[url] = imgs
 	return nil
 }
 
-func crawlPack(url string) ([]string, error) {
+func (img *imageCrawler) crawlPack(url string) ([]string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -71,7 +89,7 @@ func crawlPack(url string) ([]string, error) {
 	paths := regEx(`<a[^>]*href=["']([^>]*?)["'][^>]*>`, string(body[:]))
 	result := make([]string, 0)
 	for _, path := range paths {
-		final, _ := finalUrl(path, url)
+		final, _ := finalUrl(path, img.url)
 		if final != "" {
 			result = append(result, final)
 		}
@@ -80,17 +98,43 @@ func crawlPack(url string) ([]string, error) {
 	return result, nil
 }
 
+func searchBL(bl []string, key string) bool {
+	for _, x := range bl {
+		if x == key {
+			return true
+		}
+	}
+	return false
+}
+
 func (img *imageCrawler) crawl() error {
 	queue := make([]string, 0)
+	bl := make([]string, 0)
 	queue = append(queue, img.url)
 
-	pack, err := crawlPack(img.url)
-	if err != nil {
-		return err
-	}
+	for len(queue) > 0 {
+		url := queue[0]
+		queue = queue[1:]
 
-	// TODO RUN QUEUE
-	fmt.Printf("%q", pack)
+		pack, err := img.crawlPack(url)
+		if err != nil {
+			return err
+		}
+
+		if !searchBL(bl, url) {
+			img.scanForImages(url)
+			bl = append(bl, url)
+		}
+
+		for _, x := range pack {
+			if !searchBL(bl, x) {
+				if isSameDomain(img.url, x) {
+					queue = append(queue, x)
+				}
+			}
+		}
+
+	}
 
 	return nil
 }
@@ -98,7 +142,7 @@ func (img *imageCrawler) crawl() error {
 func initCrawler(url string) *imageCrawler {
 	result := &imageCrawler{
 		url:     url,
-		ImgUrls: make([]string, 0),
+		ImgUrls: make(map[string][]string, 0),
 	}
 	return result
 }
@@ -109,5 +153,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%q", crawler.ImgUrls)
+	for key, values := range crawler.ImgUrls {
+		fmt.Printf("%s:\n", key)
+		for i, value := range values {
+			fmt.Printf("\t%d.) %s\n", i+1, value)
+		}
+	}
 }
