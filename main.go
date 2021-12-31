@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"regexp"
+	"sync"
 )
 
 type imageCrawler struct {
@@ -13,6 +14,8 @@ type imageCrawler struct {
 	imgBL   []string
 	body    string
 }
+
+var wg sync.WaitGroup
 
 func regEx(pattern string, value string) []string {
 	re := regexp.MustCompile(pattern)
@@ -115,25 +118,28 @@ func (img *imageCrawler) crawl() error {
 	for len(queue) > 0 {
 		url := queue[0]
 		queue = queue[1:]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pack, _ := img.crawlPack(url)
 
-		pack, err := img.crawlPack(url)
-		if err != nil {
-			return err
-		}
+			if !searchBL(bl, url) {
+				img.scanForImages(url)
+				bl = append(bl, url)
+			}
 
-		if !searchBL(bl, url) {
-			img.scanForImages(url)
-			bl = append(bl, url)
-		}
-
-		for _, x := range pack {
-			if !searchBL(bl, x) {
-				if isSameDomain(img.url, x) {
-					queue = append(queue, x)
+			for _, x := range pack {
+				if !searchBL(bl, x) {
+					if isSameDomain(img.url, x) {
+						queue = append(queue, x)
+					}
 				}
 			}
-		}
+		}()
 
+		if len(queue) == 0 {
+			wg.Wait()
+		}
 	}
 
 	return nil
@@ -153,10 +159,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	wg.Wait()
+
+	counter := 0
 	for key, values := range crawler.ImgUrls {
 		fmt.Printf("%s:\n", key)
 		for i, value := range values {
 			fmt.Printf("\t%d.) %s\n", i+1, value)
+			counter++
 		}
 	}
+	fmt.Printf("\nCOUNTER: %d\n", counter)
 }
